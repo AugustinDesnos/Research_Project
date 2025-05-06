@@ -73,6 +73,7 @@ sun = CelestialBodyFactory.getSun()
 msafe = MarshallSolarActivityFutureEstimation(MarshallSolarActivityFutureEstimation.DEFAULT_SUPPORTED_NAMES,
                                               MarshallSolarActivityFutureEstimation.StrengthLevel.AVERAGE)
 
+#the propagation of the initial sigma points into the semi-major axis and the eccentricity
 def sigma_points(mean, covariance):
     def non_linear_function(x):
         a = (x[0] + x[1]) / 2.0
@@ -87,6 +88,7 @@ def sigma_points(mean, covariance):
     transformed_sigma_points = [non_linear_function(sp) for sp in sigma_points]
     return transformed_sigma_points, transformed_gaussian
 
+#the propagation function
 def numerical_propagation(x):
     initialOrbit = KeplerianOrbit(float(x[0]),
                                     float(x[1]),
@@ -154,7 +156,8 @@ num_samples = 1000
 samples = [newgaussian.sample() for _ in range(num_samples)]
 samples[:0] = sig_points
 
-
+#plot the initial semi major axis and eccentricity Gaussian covariance ellipse 
+#(haven't managed to add in the random samples aswell but will change that soon)
 plt.figure()
 ax = plt.gca()
 plot_ellipse(gaussian_ae.mean(), gaussian_ae.covariance(), ax, n_std=1, facecolor='none', edgecolor='green')  
@@ -164,11 +167,11 @@ plt.show()
 
 lat = []
 lon = []
-pvs = []
 pa = []
 time = []
 positions = []
 
+#propagate each sample and get the parameters needed
 for j in range(len(samples)):
     pvs, final_state, final_state_orbit = numerical_propagation(samples[j])
     p = pvs.getPosition()
@@ -178,9 +181,7 @@ for j in range(len(samples)):
     position = [x, y, z]
     positions.append(position)
     t = initialDate.shiftedBy(float(final_state.getDate().durationFrom(initialDate)))
-    RAAN = final_state_orbit.getRightAscensionOfAscendingNode()
     perig = final_state_orbit.getPerigeeArgument()
-    incli = final_state_orbit.getI()
     trueano = final_state_orbit.getTrueAnomaly()
     pa.append(np.degrees(perig+trueano))
     time.append(final_state.getDate().durationFrom(initialDate)/3600)
@@ -189,9 +190,11 @@ for j in range(len(samples)):
     lat.append(np.degrees(subpoint.getLatitude()))
     lon.append(np.degrees(subpoint.getLongitude()))
 
+#gaussian function (was used previously to show gaussian dependance of the perigee angles
 def gaussian(x, amplitude, mean, stddev):
     return amplitude * np.exp(-((x - mean) ** 2) / (2 * stddev ** 2))
 
+#perigee angle unwrapping function
 def unwrap_angles(perigee):
     unwrapped = [perigee[0]]
 
@@ -211,6 +214,7 @@ time = np.array(time)
 pa = np.array(pa)
 positions = np.array(positions)
 
+#unwrap the perigee angles to avoid periodic relation with time
 sigma_indices = [0, 1, 2, 3, 4, 5, 6]
 sorted_indices = np.argsort(time)
 time_sorted = time[sorted_indices]
@@ -220,6 +224,7 @@ sigma_sorted_indices = [reverse_lookup[i] for i in sigma_indices]
 print(sigma_sorted_indices)
 unwrapped_pa = np.array(unwrap_angles(pa_sorted))
 
+#plot the perigee angles in terms of the time it took the satellite to reach 80km of altitude
 plt.figure()
 plt.scatter(time[7:], pa[7:], color = "orange", alpha = 0.3, marker = "+")
 plt.scatter(time[:7], pa[:7], color = "red")
@@ -227,6 +232,7 @@ plt.title("Perigee in terms of time of propagation")
 plt.grid(True)
 plt.show()
 
+#plot the unwrapped angles to show the gaussian resemblance
 plt.figure()
 plt.scatter(time_sorted, unwrapped_pa, color = "orange", alpha = 0.3, marker = "+")
 plt.scatter(time_sorted[sigma_sorted_indices], unwrapped_pa[sigma_sorted_indices], color = "red")
@@ -234,6 +240,7 @@ plt.title("Scattered unwrapped perigees in terms of time")
 plt.grid(True)
 plt.show()
 
+#calulate the new mean and variance of the sigma points
 final_sig_points = [(t, x) for t, x in zip(time_sorted[sigma_sorted_indices], unwrapped_pa[sigma_sorted_indices])]
 final_sig_points = np.array(final_sig_points)
 final_sig_points = final_sig_points[np.argsort(final_sig_points[:, 0])]
@@ -242,6 +249,7 @@ final_sig_points = np.delete(final_sig_points, [1, 5], axis=0)
 final_mean = np.mean(final_sig_points, axis=0)
 final_covariance = np.cov(final_sig_points, rowvar=False)
 
+#plot the fitted Gaussian ellipse
 plt.figure()
 ax = plt.gca()
 plot_ellipse(final_mean, final_covariance, ax, n_std=1, facecolor='none', edgecolor='green')  
@@ -250,7 +258,7 @@ plt.title("Gaussian ellipse fitted to it")
 plt.tight_layout()
 plt.show()
 
-
+#create 3D plot to visualize where in its orbit does the satellite arrive at 80km of altitude
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 ax.scatter(positions[:,0], positions[:,1], positions[:,2], label = "Orbit Trajectory")
@@ -285,6 +293,7 @@ ax.set_ylim(np.min(positions[:,:3]),np.max(positions[:,:3]))
 ax.set_zlim(np.min(positions[:,:3]),np.max(positions[:,:3]))
 plt.show()
 
+#create the map plot to visualize landing
 m = Basemap(projection='cyl',
             resolution='l',
             area_thresh=None)
