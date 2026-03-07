@@ -416,15 +416,12 @@ if __name__ == "__main__":
             latitudes = np.arange(yllcorner, yllcorner + nrows * cellsize, cellsize)
             latitudes = np.flip(latitudes)
             GRID_SIZE = 1
-            # Create a dictionary mapping (lat, lon) to population density
+
             pop_dict = {}
             for i, lat in enumerate(latitudes):
                 for j, lon in enumerate(longitudes):
                     pop = values[i, j]     
-                    # Only store coordinates where population > 0
                     if pop > 0.0:
-                        # Round to ensure the keys perfectly match the Julia float keys 
-                        # (e.g., -59.0 instead of -59.0000000001)
                         coord_key = (np.round(lat, 1), np.round(lon, 1))
                         pop_dict[coord_key] = pop
             inc = radians(popt_i_unwrapped[0])
@@ -441,15 +438,12 @@ if __name__ == "__main__":
             int_start = time.time()
             integration_results = jl.compute_casualty_risk(cells, final_mean, final_covariance, inc, casualty_area, 1e-3)
 
-            # 1. Convert Julia output directly into a 2D numpy matrix 
-            # (Rows are latitudes -90 to 89, Columns are longitudes -180 to 179)
             risk_matrix = np.array(integration_results).reshape((180, 360))
 
-            # 2. Map Population dictionary to matrix indices ONCE to save massive amounts of time
             pop_targets = []
             for (lat, lon), pop in pop_dict.items():
-                row = int(round(lat + 90.0))  # Lat -90 becomes row 0
-                col = int(round(lon + 180.0)) # Lon -180 becomes col 0
+                row = int(round(lat + 90.0)) 
+                col = int(round(lon + 180.0))
                 if 0 <= row < 180 and 0 <= col < 360:
                     pop_targets.append((row, col, pop))
 
@@ -458,20 +452,13 @@ if __name__ == "__main__":
 
             risk_list = []
 
-            # 3. Shift the entire matrix at once using NumPy
             for shift in range(360):
-                # np.roll shifts the matrix columns to the right, simulating longitudinal shift
                 shifted_matrix = np.roll(risk_matrix, shift, axis=1)
-                
-                # Calculate total risk for this shift
                 total = 0.0
                 for r, c, pop in pop_targets:
                     total += pop * shifted_matrix[r, c]
-                    
-                # VERY IMPORTANT: Multiply by casualty_area here! 
                 total_risk_value = total * casualty_area
                 
-                # Append the normalized risk
                 risk_list.append(total_risk_value / random_reentry)
 
             for degree, val in enumerate(risk_list):
@@ -508,4 +495,5 @@ if __name__ == "__main__":
     #plt.xlabel('Perigee Argument (in degrees)')
     #plt.ylabel('J(rp, ra)')
     #plt.grid(True)
+
     #plt.show()
