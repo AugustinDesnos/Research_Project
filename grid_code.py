@@ -88,7 +88,7 @@ def numerical_propagation(sp, raan, i, omega, lv, initial_date, duration, mass, 
     return float(perig_val + trueano_val), float(RAAN_val), float(incli_val), float(elapsed_time)
 
 # -------------------------------------------------------------------------
-# Mathematical Helpers
+# Helper Functions
 # -------------------------------------------------------------------------
 
 def load_population_targets(filename):
@@ -117,6 +117,7 @@ def load_population_targets(filename):
         print(f"Error: File {filename} not found.")
         return []
 
+# Computes the sigma points of the (a, e) probability distribution using the uncertainty in rp and ra.
 def sigma_points(mean, covariance):
     def non_linear_function(x):
         a = (x[0] + x[1]) / 2.0
@@ -126,6 +127,10 @@ def sigma_points(mean, covariance):
     transformed_gaussian = unscented_transform(gaussian, non_linear_function)
     return [non_linear_function(sp) for sp in gaussian.compute_sigma_points()], transformed_gaussian
 
+# Unwrapping function: from the sigma points, all wrapped between -2pi and 2pi, it is necessary to unwrap them so that they go from -inf to inf.
+# The samples all followed a straight line function, with gradient = -16.308802503037768. By taking this gradient, it is then possible
+# to map the sigma points onto the straight line fit, taking into account the slight error from the straight line.
+# IF the uncertainties are much more precise, it is possible to create a much simpler code.
 def unwrap_angles(perigee, lan):
     perigee, lan = np.array(perigee), np.array(lan)
     sort = np.argsort(lan)
@@ -146,9 +151,12 @@ def unwrap_angles(perigee, lan):
     new_perigee = perigee[mean_index] + (lan*best_grad - lan[mean_index]*best_grad + perigee[mean_index]) + shifts - perigee[mean_index]
     return new_perigee, lan, sort
 
+# Not a necessary function as we simply take the average inclination to compute the casualty risk.
 def inclination_model(alpha, i0, i1, i2):
     return i0 + i1 * np.cos(alpha) + i2 * np.cos(2 * alpha)
 
+# Uses a table obtained from the CNES to determine the value of the random risk associated with a satellite falling into the atmosphere.
+# Inputs: date, inclination of the orbit, and spacecraft area (we consider here that the spacecraft does not fragment)
 def random_risk(year, inclination, spacecraft_area):
     data = {
     2021: [9.06, 9.7, 6.85, 6.4, 6.64, 4.95, 4.74, 4.36, 4.69, 5.3, 5.79, 6.16, 6.84, 7.52, 8.01, 8.37, 8.62, 8.77, 8.82, 8.81, 8.79, 8.75, 8.69, 8.62, 8.54, 8.43, 8.31, 8.17, 8.01],
@@ -179,6 +187,7 @@ def random_risk(year, inclination, spacecraft_area):
     cas_area = float(interp_func(year, inclination)[0][0])
     return (1e-4) * ((np.sqrt((0.677/2)**2*np.pi) + np.sqrt(spacecraft_area))**2) / cas_area
 
+# Uses the definition of the unscented transform to determine the mean and covariance of the propagated distribution using the sigma points
 def final_mean_covariance(perigee, lan, sort_mask, n):
     mean_perig, mean_lan, covariance = 0, 0, np.zeros((2,2))
     original_weights = np.array([1/(2*(n*2 - 3)) for _ in range(len(perigee))])
@@ -220,9 +229,9 @@ def process_omega_chunk(omega_chunk, rp, ra, pop_targets, static_cells, duration
 
     initial_inc, lv, satellite_mass = radians(98.2), radians(0), playerOne[0]
     
-    sigma_rp, sigma_ra = 500.0, 1000.0
+    sigma_rp, sigma_ra = 10.0, 10.0
     sigma_t = np.radians(0.5)/Constants.WGS84_EARTH_ANGULAR_VELOCITY
-    sigma_k, sigma_w, sigma_i, sigma_v = 0.1, radians(0.5), radians(0.01), radians(0.5)
+    sigma_k, sigma_w, sigma_i, sigma_v = 0.01, radians(0.5), radians(0.01), radians(0.5)
     
     mean = np.array([ra+Constants.WGS84_EARTH_EQUATORIAL_RADIUS, rp+Constants.WGS84_EARTH_EQUATORIAL_RADIUS])
     covariance = np.array([[sigma_ra**2, 0.0], [0.0, sigma_rp**2]])
@@ -331,10 +340,13 @@ if __name__ == "__main__":
     static_cells = [(radians(lat), radians(lat + 1.0), radians(lon), radians(lon + 1.0)) 
                     for lat in cell_latitudes for lon in cell_longitudes]
 
+#INPUT THE RANGE OF VALUES OF GRID SEARCHING HERE. IF A SLURM IS TO BE USED, CHANGE THE VALUES INSIDE HERE INTO THE SLURM ARGUMENTS.
+#TO CHANGE THE VALUES OF THE UNCERTAINTIES, SEE LINES 232 TO 234.
     rp_values = range(130000, 135000, 10000)
     ra_values = range(270000, 280000, 10000)
     parameter_sets = [{'rp': x, 'ra': y} for x in rp_values for y in ra_values]
 
+#THE NUMBERS OF CORES TO USE CAN BE CHANGED HERE.
     playerOne, duration, num_cores = [90, 1.1, 2.25], 4*24*3600, 3
     wide_format_results = []
     
